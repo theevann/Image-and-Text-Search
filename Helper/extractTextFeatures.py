@@ -19,8 +19,6 @@ sentences = [[word for word in sentence if word not in cachedStopWords] for sent
 print("Learning model...")
 model = Word2Vec(sentences, size=100, min_count=5, workers=4)
 model.init_sims(replace=True)
-# test = model.most_similar(positive=['bathroom'], topn=10)
-# print(test)
 
 print("Saving model and frequencies...")
 wordsVectors = {word: model[word] for word in model.vocab.keys()}

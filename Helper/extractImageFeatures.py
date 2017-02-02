@@ -1,11 +1,11 @@
+from os import environ
+from sys import path
+environ['GLOG_minloglevel'] = '2'
+path.append("./caffe/python")
 import numpy as np
 from pycocotools.coco import COCO
-import os
-os.environ['GLOG_minloglevel'] = '2'
 import caffe
 
-# export PYTHONPATH="/home/evann/Documents/Dropbox/Travail/MVA/Object Recognition/Projet/caffe-master/python":$PYTHONPATH
-# export PYTHONPATH="/home/evann/dev/perso/Projet RecVis/caffe-master/python":$PYTHONPATH
 
 def log(s):
     if (logging):
@@ -17,7 +17,7 @@ batchSize = 10
 log("Loading images names through COCO api")
 dataDir = '/media/evann/Data/MS COCO/'
 # dataType = 'train2014'
-dataType = 'val2014'
+# dataType = 'val2014'
 annFile = '%s/annotations/instances_%s.json' % (dataDir, dataType)
 coco = COCO(annFile)
 imgs = coco.loadImgs(coco.getImgIds())
@@ -29,7 +29,7 @@ log("%d images names loaded" % nbImages)
 
 log("Defining caffe variables")
 # Main path to your caffe installation
-caffe_root = './caffe-master/'
+caffe_root = './caffe/'
 model_prototxt = caffe_root + 'models/bvlc_googlenet/deploy.prototxt'
 model_trained = caffe_root + 'models/bvlc_googlenet/bvlc_googlenet.caffemodel'
 mean_path = caffe_root + 'python/caffe/imagenet/ilsvrc_2012_mean.npy'

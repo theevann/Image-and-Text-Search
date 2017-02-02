@@ -20,4 +20,4 @@ for ann in anns:
         annotations[imId] = np.array(ann["caption"])
 
 print("Saving annotations...")
-np.save('imgAnnotations_%s' % dataType, annotations)
+np.save('annotations_%s' % dataType, annotations)
