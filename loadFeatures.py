@@ -103,7 +103,3 @@ def findImagesWithWordInAnnotations(word):
 def findImagesWithWordInCategory(word):
     ids = cat2im[word]
     return ids
-
-
-# wordAnn = {imId : sentencesToWords(sentences) for imId, sentences in annotations.items()}
-# np.save('wordsOfAnnotations', wordAnn)
