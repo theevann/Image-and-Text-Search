@@ -1,6 +1,10 @@
 from sys import version_info, path
 from os import system, environ
+
+# APPEND CAFFE TO YOUR PATH
+path.append("./caffe/python")  # export PYTHONPATH="/home/evann/dev/perso/Projet RecVis/caffe/python":$PYTHONPATH
 environ['GLOG_minloglevel'] = '2'
+
 import skimage.io as io
 import matplotlib.pyplot as plt
 import caffe
@@ -9,10 +13,6 @@ from CCA_search import imageToTagSearch
 
 user_input = input if version_info[0] > 2 else raw_input
 
-# export PYTHONPATH="/home/evann/Documents/Dropbox/Travail/MVA/Object Recognition/Projet/caffe-master/python":$PYTHONPATH
-# export PYTHONPATH="/home/evann/dev/perso/Projet RecVis/caffe/python":$PYTHONPATH
-
-path.append("/home/evann/dev/perso/Projet RecVis/caffe/python")
 
 print("Loading Caffe model")
 caffe_root = './caffe/'
