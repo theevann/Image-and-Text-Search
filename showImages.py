@@ -1,33 +1,38 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-imgsDir = '/media/evann/Data/MS COCO'
-featuresDir = 'Features'
-dataType = 'train2014'
-annotations = np.load('%s/annotations.npy' % (featuresDir)).item()
+imageFolder = 'dataset'
+featuresFolder = 'features'
+
+annotations = np.load('%s/annotations_train2017.npy' % (featuresFolder), allow_pickle=True).item()
+annotations.update(np.load('%s/annotations_val2017.npy' % (featuresFolder), allow_pickle=True).item())
 
 
-def showImage(imId):
-    imgName = 'COCO_%s_000000%s.jpg' % (dataType, imId)
-    I = plt.imread('%s/%s/%s' % (imgsDir, dataType, imgName))
-    plt.imshow(I)
+def showImage(imageId):
+    imageName = '000000%s.jpg' % (imageId)
+    try:
+        image = plt.imread('%s/%s/%s' % (imageFolder, 'train2017', imageName))
+    except:
+        image = plt.imread('%s/%s/%s' % (imageFolder, 'val2017', imageName))
+    plt.imshow(image)
     plt.show()
 
 
-def showAnnotations(imId):
-    print("\nAnnotation for image %s:" % imId)
-    for ann in annotations[imId]:
-        print(ann)
+def showAnnotations(imageId):
+    print("\nAnnotation for image %s:" % imageId)
+    for annotation in annotations[imageId]:
+        print(annotation)
 
 
-def show(imIds, img=True, ann=True):
-    if type(imIds) is not list:
-        imIds = [imIds]
-    for imId in imIds:
-        if ann:
-            showAnnotations(imId)
-        if img:
-            showImage(imId)
+def show(imageIds, image=True, annotation=True):
+    if type(imageIds) is not list:
+        imageIds = [imageIds]
+
+    for imageId in imageIds:
+        if annotation:
+            showAnnotations(imageId)
+        if image:
+            showImage(imageId)
 
 if __name__ == '__main__':
     show(['329084'])

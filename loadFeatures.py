@@ -1,105 +1,88 @@
+from Helper.extractImageFeatures import Transformer
+from torchvision import models
+
+from nltk.corpus import stopwords as sw
+from collections import Counter
 import numpy as np
-
-featuresDir = 'Features'
-
-dictionnary = None
-imgIds = None
-vecImages = None
-vecWords = None
-freqWords = None
-annotations = None
-wordsOfAnnotations = None
-stopwords = None
-
-cat2im = None
-im2cat = None
+import torch
+import re
 
 
-def load_features(dbWordFeature):
-    global vecImages, vecWords, freqWords, annotations, dictionnary, imgIds, wordsOfAnnotations, stopwords, cat2im, im2cat
+class Features():
+    """docstring for Features."""
+    def __init__(self, featuresDir, dataType):
+        super(Features, self).__init__()
+        vecImages = torch.load('{0}/imgFeatures_{1}'.format(featuresDir, dataType))
+        vecAnnotations = np.load('{0}/annotationFeatures_{1}.npy'.format(featuresDir, dataType), allow_pickle=True).item()
 
-    vecImages = np.load('{0}/imgFeatures.npy'.format(featuresDir), encoding='latin1').item()
-    vecWords = np.load('{0}/wordFeatures_{1}.npy'.format(featuresDir, dbWordFeature), encoding='latin1').item()
-    freqWords = np.load('{0}/wordFrequencies.npy'.format(featuresDir)).item()
-    annotations = np.load('{0}/annotations.npy'.format(featuresDir)).item()
-    wordsOfAnnotations = np.load('{0}/annotationsToWords.npy'.format(featuresDir)).item()
-    stopwords = np.load('{0}/stopwords.npy'.format(featuresDir))
+        self.vecWords = np.load('{0}/wordFeatures.npy'.format(featuresDir), encoding='latin1', allow_pickle=True).item()
+        self.freqWords = np.load('{0}/wordFrequencies.npy'.format(featuresDir), allow_pickle=True).item()
+        self.annotations = np.load('{0}/annotations_{1}.npy'.format(featuresDir, dataType), allow_pickle=True).item()
+        self.ann2words = np.load('{0}/annotation2word_{1}.npy'.format(featuresDir, dataType), allow_pickle=True).item()
+        self.stopwords = sw.words("english")
 
-    cat2im = np.load('{0}/cat2im.npy'.format(featuresDir)).item()
-    im2cat = np.load('{0}/im2cat.npy'.format(featuresDir)).item()
+        self.dictionnary = list(self.vecWords.keys())
+        self.imgIds = np.sort(list(vecImages.keys()))
 
-    dictionnary = list(vecWords.keys())
-    imgIds = np.sort(list(vecImages.keys()))
+        self.imageMatrix = torch.stack([vecImages[imId] for imId in self.imgIds])
+        self.annotationMatrix = torch.stack([vecAnnotations[imId] for imId in self.imgIds])
 
+        self.cat2im = np.load('{0}/cat2im_{1}.npy'.format(featuresDir, dataType), allow_pickle=True).item()
+        self.im2cat = np.load('{0}/im2cat_{1}.npy'.format(featuresDir, dataType), allow_pickle=True).item()
 
-def get_images_id():
-    return imgIds
+        self.imageModel = None
+        self.transformer = None
 
+    def getVisualFeatures(self):
+        return self.imageMatrix
 
-def get_categories():
-    return cat2im.keys()
-
-
-def get_visual_features():
-    V = [(vecImages[im_ID])[0] for im_ID in imgIds]
-    V = np.array(V)
-    return V
-
-
-def get_tag_features(fileName=None):
-    if (fileName is not None):
-        T = np.load(fileName)
-    else:
-        annot = [annotations[im_ID] for im_ID in imgIds]
-        T = [sentencesToVec(ann) for ann in annot]
-        T = np.array(T)
-    return T
+    def getTagFeatures(self):
+        return self.annotationMatrix
 
 
-def sentenceToWords(sentence):
-    words = sentence.lower().replace(',', '').replace('.', '').replace('"', '').replace("'s", '').split()
-    words = [word for word in words if word not in stopwords and word in dictionnary]
-    return words
+    def findImagesFromWordInAnnotations(self, word):
+        ids = [imId for imId, words in self.ann2words.items() if word in words]
+        return ids
+
+    def findImagesInCategory(self, cat):
+        return self.cat2im[cat]
+
+    def mostCommonWordsIn(self, ids, n_tags):
+        words = [word for id in ids for word in self.ann2words[id]]
+        most_commons = Counter(words).most_common(n_tags)
+        return list(zip(*most_commons))
 
 
-def sentencesToWords(sentences):
-    words = sentenceToWords(' '.join(sentences))
-    return words
+    def sentenceToWords(self, sentence):
+        words = re.sub('[\.,"]|\'s', '', sentence.lower()).split()
+        return [word for word in words if word not in self.stopwords and word in self.dictionnary]
+
+    def sentencesToWords(self, sentences):
+        return self.sentenceToWords(' '.join(sentences))
+
+    def sentenceToVec(self, sentence):
+        return np.sum(self.vecWords[word] for word in self.sentenceToWords(sentence))
+
+    def sentencesToVec(self, sentences):
+        return self.sentenceToVec(' '.join(sentences))
 
 
-def annotationsToWords(imIds):
-    if wordsOfAnnotations:
-        words = np.concatenate([wordsOfAnnotations[imId] for imId in imIds])
-    else:
-        sentences = [' '.join(annotations[imId]) for imId in imIds]
-        words = sentencesToWords(sentences)
-    return words
+    def imageToVec(self, image):
+        if not self.imageModel:
+            self.loadImageModel()
+        imageTensor = self.transformer(image)
+        # import ipdb; ipdb.set_trace()
+        import numpy as np
+        print(np.array(image))
+        print(imageTensor)
+        # import matplotlib.pyplot as plt
+        # plt.axis('off')
+        # plt.imshow(imageTensor.permute(1,2,0).numpy())
+        # plt.show()
+        output = self.imageModel(imageTensor.unsqueeze(0)).squeeze()
+        return output
 
-
-def sentenceToVec(sentence):
-    words = sentenceToWords(sentence)
-    sentVec = np.zeros_like(vecWords['word'])
-    sumFreq = 0
-    for word in words:
-        # weight = freqWords[word]
-        weight = 1
-        sentVec += vecWords[word] * weight
-        sumFreq += weight
-    if sumFreq != 0:
-        sentVec /= sumFreq
-    return sentVec
-
-
-def sentencesToVec(sentences):
-    vector = sentenceToVec(' '.join(sentences))
-    return vector
-
-
-def findImagesWithWordInAnnotations(word):
-    ids = [imId for imId, words in wordsOfAnnotations.items() if word in words]
-    return ids
-
-
-def findImagesWithWordInCategory(word):
-    ids = cat2im[word]
-    return ids
+    def loadImageModel(self):
+        resnet50 = models.resnet50(pretrained=True)
+        self.imageModel = torch.nn.Sequential(*(list(resnet50.children())[:-1]))
+        self.transformer = Transformer()

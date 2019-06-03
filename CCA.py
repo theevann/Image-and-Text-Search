@@ -1,60 +1,97 @@
 # -*- coding: utf-8 -*-
-from CCA_utils import solveCCA, mapVisualFeatures, mapTagFeatures
-from CCA_search import textToImageSearch, imageToTagSearch
-from loadFeatures import *
-from showImages import show
+import torch
+import scipy.linalg as linalg
 
 
-### LOAD FEATURES
-print("Loading features")
-# dbWordFeature = "WIKI"
-dbWordFeature = "COCO"
+class CCA():
+    """
+    dimension : dimension of the common CCA space (number of kept eigenvectors and eigenvalues)
+    regularization : added to the diagonal of the covariance matrix in order to regularize the problem
+    power : the power to each the eigenvalues are elevated in the output D
+    """
+    def __init__(self, dimension, regularization=1, power=-1):
+        super(CCA, self).__init__()
+        self.dimension = dimension
+        self.regularization = regularization
+        self.power = power
 
-load_features(dbWordFeature)
-imIds = get_images_id()
+        self.features_list = []
+        self.dims = []
+        self.Ws = None
+        self.D = None
 
+    def solve(self, features_list):
+        self.features_list = features_list
+        self.dims = [f.size(1) for f in self.features_list]
 
-## Visual features
-V = get_visual_features()
-d1 = V.shape[1]
-phi_V = mapVisualFeatures(V)
+        S, S_D = self.computeCovMatrix()
+        self.findMatrixAndEig(S, S_D)
 
-## Text features
-T = get_tag_features(fileName='Features/tagFeatures_COCO.npy')
-d2 = T.shape[1]
-phi_T = mapTagFeatures(T)
+    def computeCovMatrix(self):
+        '''
+        # Inputs:
+        features : takes the list of features (phi(X_i)) as input (two or
+        three elements respectively for the two and three-view CCA)
 
-## We can save it...
-# np.save('Features/tagFeatures_DATASET.npy', T)
+        # Outputs:
+        S : the covariance matrix composed of all pairs of covariance
+        matrices between the different views,
+        S_D : the bloc diagonal matrix composed of the self-covariance
+        matrices for each view
+        '''
 
+        dims = torch.Tensor(self.dims)
+        dim = torch.Tensor(dims).sum().int().item()
+        S = torch.zeros((dim, dim))
+        S_D = torch.zeros((dim, dim))
 
-### COMPUTE COVARIANCE AND SOLVE CCA
-print("Computing CCA")
+        indices = dims.cumsum(0)
+        indices = torch.cat([torch.Tensor([0]), indices]).int()
 
-W, D = solveCCA([phi_V, phi_T], dimension=80, regularization=1, power=-1)
+        n_views = len(self.features_list)
+        for i in range(n_views):
+            for j in range(i):
+                S_ij = self.features_list[i].t() @ self.features_list[j]
+                S[indices[i]:indices[i+1], indices[j]:indices[j+1]] = S_ij
+            S_ii = self.features_list[i].t() @ self.features_list[i]
+            S_D[indices[i]:indices[i+1], indices[i]:indices[i+1]] = S_ii
 
-# Extract matrices
-W_V = W[:d1]
-W_T = W[d1:]
+        S = S + S.t() + S_D
+        return S, S_D
 
-## We can save it...
-# np.save('CCA_0', [W_T, W_V, phi_T, phi_V, D])
+    def findMatrixAndEig(self, S, S_D):
+        '''
+        # Inputs:
+        S : the global covariance matrix between all pairs of "views"
+        S_D : the bloc diagonal matrix composed of the self-covariance matrices for each view
 
+        # Outputs:
+        W : the matrix composed of the d eigenvectors as columns
+        D : diagonal matix given by the p-th power of the d corresponding eigenvalues
+        '''
 
-### TESTS ...
-print("Testing")
+        # REGULARIZE
+        I_g = self.regularization * torch.eye(len(S))
+        S_D = S_D + I_g
 
-search = 'yellow'
-resIds, similarities = textToImageSearch(search, W_T, D, 10, phi_V, W_V, imIds)
-tags, counts = imageToTagSearch(V[4001], W_V, D, 15, phi_T, W_T, imIds)
+        # FIND EIGENVECTORS and GET THE INDICES OF THE D LARGEST EIGENVALUES
+        eigenValues, eigenVectors = linalg.eig(S.numpy(), S_D.numpy())
+        eigenValues, eigenVectors = torch.from_numpy(eigenValues.real), torch.from_numpy(eigenVectors.real)
+        idx = eigenValues.argsort(descending=True)[:self.dimension]
 
+        # BUILD W AND D
+        self.D = torch.diag(eigenValues[idx] ** self.power)
+        self.Ws = eigenVectors[:, idx].split(self.dims)
 
-print("\n=============")
-print("Tag To Images")
-print("Input: %s" % search)
-show(resIds.tolist())
+    def getSimilarities(self, feature_1, dim_1, dim_2):
+        W_1 = self.Ws[dim_1]
+        W_2 = self.Ws[dim_2]
 
-print("\n=============")
-print("Image To Tags")
-print("Output: %s" % tags)
-show(imIds[4001])
+        scaled_proj_1 = feature_1 @ W_1 @ self.D
+        scaled_proj_2 = self.features_list[dim_2] @ W_2 @ self.D
+
+        dots = scaled_proj_1 @ scaled_proj_2.t()
+        prods = scaled_proj_1.norm() * scaled_proj_2.norm(dim=1)
+        similarities = dots / prods
+
+        return similarities.sort(descending=True)

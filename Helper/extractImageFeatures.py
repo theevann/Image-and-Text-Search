@@ -1,104 +1,78 @@
-from os import environ
-from sys import path
-environ['GLOG_minloglevel'] = '2'
-path.append("./caffe/python")
-import numpy as np
+import torch
+from torchvision import models, transforms
 from pycocotools.coco import COCO
-import caffe
+
+from PIL import Image
+from tqdm import tqdm
+
+from torch.utils.data import Dataset, DataLoader
+
+batch_size = 250
+num_workers = 8
+
+annotationsFolder = "../dataset/annotations"
+imageFoler = "../dataset"
+featuresFolder = "../features"
+dataFolders = ['train2017', 'val2017']
+
+#############################################
+# Create a custom Dataset to be able to use the Dataloader class and have multiple workers
+
+class Transformer():
+    def __init__(self):
+        # Define image transforms
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        expand = transforms.Lambda(lambda x: x.expand(3, 224, 224))
+        self.transform = transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor(), normalize, expand])
+
+    def __call__(self, image):
+        return self.transform(image)
 
 
-def log(s):
-    if (logging):
-        print(s)
+class CocoDataset(Dataset):
+    def __init__(self, annotationsFolder, imageFoler, dataFolder):
+        annotationsFile = '%s/instances_%s.json' % (annotationsFolder, dataFolder)
+        coco = COCO(annotationsFile)
+        self.folder = '%s/%s' % (imageFoler, dataFolder)
+        self.imgs = coco.loadImgs(coco.getImgIds())
+        self.transformer = Transformer()
 
-logging = True
-batchSize = 10
+    def __len__(self):
+        return len(self.imgs)
 
-log("Loading images names through COCO api")
-dataDir = '/media/evann/Data/MS COCO/'
-# dataType = 'train2014'
-# dataType = 'val2014'
-annFile = '%s/annotations/instances_%s.json' % (dataDir, dataType)
-coco = COCO(annFile)
-imgs = coco.loadImgs(coco.getImgIds())
-imgsNames = [img['file_name'] for img in imgs]
-imgsIds = [img['id'] for img in imgs]
-nbImages = len(imgs)
-log("%d images names loaded" % nbImages)
+    def __getitem__(self, idx):
+        info = self.imgs[idx]
+        img = self.transformer(Image.open("%s/%s" % (self.folder, info['file_name'])))
+        return img, str(info['id']).zfill(6)
 
-
-log("Defining caffe variables")
-# Main path to your caffe installation
-caffe_root = './caffe/'
-model_prototxt = caffe_root + 'models/bvlc_googlenet/deploy.prototxt'
-model_trained = caffe_root + 'models/bvlc_googlenet/bvlc_googlenet.caffemodel'
-mean_path = caffe_root + 'python/caffe/imagenet/ilsvrc_2012_mean.npy'
-layer_name = 'pool5/7x7_s1'
+#############################################
 
 
-# Setting this to CPU
-caffe.set_mode_cpu()
+def main():
+    # Load Resnet-50 and remove last layer
+    print("Loading Resnet-50")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    resnet50 = models.resnet50(pretrained=True).to(device)
+    model = torch.nn.Sequential(*(list(resnet50.children())[:-1]))
+
+    # if multiple GPU availables
+    model = torch.nn.DataParallel(torch.nn.Sequential(*(list(resnet50.children())[:-1])))
+
+    torch.set_grad_enabled(False)
+
+    for dataFolder in dataFolders:
+        dataset = CocoDataset(annotationsFolder, imageFoler, dataFolder)
+        loader = DataLoader(dataset, batch_size=batch_size, num_workers=num_workers)
+
+        print("\nRunning ResNet-50 over %s folder" % dataFolder)
+        imgVectors = {}
+        for batch, ids in tqdm(loader):
+            out = model(batch.to(device)).squeeze().cpu()
+            imgVectors.update({imgId: vec for imgId, vec in zip(ids, out)})
+
+        print("Saving %s images features..." % dataFolder)
+        torch.save(imgVectors, '%s/imgFeatures_%s' % (featuresFolder, dataFolder))
 
 
-log("Loading and initializing caffe model")
-# Loading the Caffe model, setting preprocessing parameters
-net = caffe.Net(model_prototxt, model_trained, caffe.TEST)
-transformer = caffe.io.Transformer({'data': net.blobs['data'].data.shape})
-transformer.set_mean('data', np.load(mean_path).mean(1).mean(1))
-transformer.set_transpose('data', (2, 0, 1))
-transformer.set_channel_swap('data', (2, 1, 0))  # if using RGB instead of BGR
-transformer.set_raw_scale('data', 255.0)
-imgsVectors = {}
-
-
-def oneByOne():
-    net.blobs['data'].reshape(1, 3, 224, 224)
-
-    for i in range(nbImages):
-        log("Processing image %d" % (i+1))
-        net.blobs['data'].data[...] = transformer.preprocess('data', caffe.io.load_image(dataDir + dataType + '/' + imgsNames[i]))
-        output = net.forward()
-        imgsVectors[imgsIds[i]] = net.blobs[layer_name].data[0].reshape(1, -1).copy()
-
-
-def nByn(n):
-    net.blobs['data'].reshape(n, 3, 224, 224)
-
-    batches = int(nbImages / n)
-    for i in range(batches):
-        log("Processing batch %d over %d" % (i+1, batches+1))
-
-        for j in range(n):
-            net.blobs['data'].data[j, ...] = transformer.preprocess('data', caffe.io.load_image(dataDir + dataType + '/' + imgsNames[j + i*n]))
-        output = net.forward()
-        for j in range(n):
-            imgsVectors[imgsIds[j + i*n]] = net.blobs[layer_name].data[j].reshape(1, -1).copy()
-
-    log("Processing batch %d over %d" % (batches+1, batches+1))
-    for j in range(nbImages - batches*n):
-        net.blobs['data'].data[j, ...] = transformer.preprocess('data', caffe.io.load_image(dataDir + dataType + '/' + imgsNames[j + batches*n]))
-    output = net.forward()
-    for j in range(nbImages - batches*n):
-        imgsVectors[imgsIds[j + batches*n]] = net.blobs[layer_name].data[j].reshape(1, -1).copy()
-
-
-log("Loading and Running CNN over %d images" % nbImages)
-nByn(batchSize)
-
-log("Saving images features...")
-np.save('imgsFeatures_%s' % dataType, imgsVectors)
-
-## {str(key).zfill(6): value for key, value in imgsVectors.items()}
-
-# # Labels
-# imagenet_labels = caffe_root + 'data/ilsvrc12/synset_words.txt'
-# label_mapping = np.loadtxt(imagenet_labels, str, delimiter='\t')
-
-# for i in range(nbImages):
-#     best_n = net.blobs['prob'].data[i].flatten().argsort()[-1:-6:-1]
-#     print('\n', imageNames[i], label_mapping[best_n])
-
-# import matplotlib.pyplot as plt
-# I = plt.imread(image_path)
-# plt.imshow(I)
-# plt.show()
+if __name__ == '__main__':
+    main()

@@ -1,29 +1,32 @@
 from sys import version_info
 from os import system
+
 from showImages import show
-from loadFeatures import *
-from CCA_search import textToImageSearch
+from loadFeatures import Features
+import numpy as np
 
 user_input = input if version_info[0] > 2 else raw_input
 
 
-def load(num=1, name='COCO'):
-    print("Loading CCA %d (%s DB)..." % (num, name))
-    load_features(name)
-    imIds = get_images_id()
-    W_T, W_V, phi_T, phi_V, D = np.load('Computed_CCA/CCA_{0}.npy'.format(num), encoding='latin1')
-    return W_T, W_V, phi_T, phi_V, D, imIds
+def load(name):
+    print("Loading CCA %d ..." % (num))
+    cca = np.load(name, encoding='latin1', allow_pickle=True).item()
+    features = Features('features', 'train2017')
+    cca.loadFeatures(features)
+    return cca
 
 
-W_T, W_V, phi_T, phi_V, D, imIds = load()
-
-search = ''
-while(search != 'EXIT'):
-    system("clear")
-    search = user_input("Search Terms: ")
-
-    if (search[:2] == 'DB'):
-        W_T, W_V, phi_T, phi_V, D, imIds = load(int(search[2:]))
-    elif (search != 'EXIT'):
-        res_IDs, similarities = textToImageSearch(search, W_T, D, 10, phi_V, W_V, imIds)
+def main(cca):
+    search = ''
+    while(search != 'EXIT'):
+        system("clear")
+        search = user_input("Search Terms: ")
+        res_IDs, similarities = cca.textToImageSearch(search, 5)
+        print(similarities)
         show(res_IDs.tolist())
+
+
+if __name__ == '__main__':
+    num = 0
+    cca = load('CCA_{0}.npy'.format(num))
+    main(cca)

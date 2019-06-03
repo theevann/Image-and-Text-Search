@@ -16,7 +16,7 @@ load_features(dbWordFeature)
 imIds = get_images_id()
 
 ## Visual features
-V = get_visual_features()
+V = getVisualFeatures()
 d1 = V.shape[1]
 phi_V = mapVisualFeatures(V)
 
