@@ -1,6 +1,6 @@
 # CCA used for Image to Tag and Tag to Image Search
 
-Implementation of this paper:
+Implementation of this paper
 http://slazebni.cs.illinois.edu/publications/yunchao_cca13.pdf  
 Using CNN features.
 
