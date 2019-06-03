@@ -2,15 +2,10 @@ from gensim.models import Word2Vec
 from pycocotools.coco import COCO
 from nltk.corpus import stopwords as sw
 import numpy as np
+import argparse
 import torch
 import re
-
-
-annotationsFolder = "../dataset/annotations"
-featuresFolder = "../features"
-
-dataTypes = ['train2017', 'val2017']
-stopwords = sw.words("english")
+import os
 
 
 def sentenceToWords(sentence):
@@ -86,6 +81,15 @@ def learnW2VModel():
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="Extract Text Features for COCO Annotations")
+    parser.add_argument('--dataset-path', type=str, required=True, help='path to COCO dataset')
+    args = parser.parse_args()
+
+    annotationsFolder = os.path.abspath(os.path.join(args.dataset_path, 'annotations'))
+    featuresFolder = os.path.abspath(os.path.join(__file__, os.pardir, os.pardir, 'features'))
+    dataTypes = ['train2017', 'val2017']
+    stopwords = sw.words("english")
+
     wordsVectors = learnW2VModel()
     extractAnnotations(wordsVectors)
     extractCategories()

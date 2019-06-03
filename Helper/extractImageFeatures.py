@@ -1,39 +1,35 @@
-import torch
-from torchvision import models, transforms
-from pycocotools.coco import COCO
-
+import os
+import argparse
 from PIL import Image
 from tqdm import tqdm
 
+import torch
+from torchvision import models, transforms
 from torch.utils.data import Dataset, DataLoader
 
-batch_size = 250
-num_workers = 8
+from pycocotools.coco import COCO
 
-annotationsFolder = "../dataset/annotations"
-imageFoler = "../dataset"
-featuresFolder = "../features"
-dataFolders = ['train2017', 'val2017']
 
 #############################################
 # Create a custom Dataset to be able to use the Dataloader class and have multiple workers
 
+
 class Transformer():
     def __init__(self):
         # Define image transforms
-        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        normalize = transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
         expand = transforms.Lambda(lambda x: x.expand(3, 224, 224))
-        self.transform = transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor(), normalize, expand])
+        self.transform = transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor(), expand, normalize])
 
     def __call__(self, image):
         return self.transform(image)
 
 
 class CocoDataset(Dataset):
-    def __init__(self, annotationsFolder, imageFoler, dataFolder):
-        annotationsFile = '%s/instances_%s.json' % (annotationsFolder, dataFolder)
+    def __init__(self, imageFolder, dataFolder):
+        annotationsFile = '%s/annotations/instances_%s.json' % (imageFolder, dataFolder)
         coco = COCO(annotationsFile)
-        self.folder = '%s/%s' % (imageFoler, dataFolder)
+        self.folder = '%s/%s' % (imageFolder, dataFolder)
         self.imgs = coco.loadImgs(coco.getImgIds())
         self.transformer = Transformer()
 
@@ -48,7 +44,7 @@ class CocoDataset(Dataset):
 #############################################
 
 
-def main():
+def main(batch_size, num_workers):
     # Load Resnet-50 and remove last layer
     print("Loading Resnet-50")
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -61,7 +57,7 @@ def main():
     torch.set_grad_enabled(False)
 
     for dataFolder in dataFolders:
-        dataset = CocoDataset(annotationsFolder, imageFoler, dataFolder)
+        dataset = CocoDataset(imageFolder, dataFolder)
         loader = DataLoader(dataset, batch_size=batch_size, num_workers=num_workers)
 
         print("\nRunning ResNet-50 over %s folder" % dataFolder)
@@ -75,4 +71,14 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    parser = argparse.ArgumentParser(description="Extract Image Features for COCO")
+    parser.add_argument('--dataset-path', type=str, required=True, help='path to COCO dataset')
+    parser.add_argument('--batch-size', type=int, default=250, help='batch size (default: 250)')
+    parser.add_argument('--num-workers', type=int, default=16, help='number of workers to load data (default: 16)')
+    args = parser.parse_args()
+
+    imageFolder = args.dataset_path
+    featuresFolder = os.path.abspath(os.path.join(__file__, os.pardir, os.pardir, 'features'))
+    dataFolders = ['train2017', 'val2017']
+
+    main(args.batch_size, args.num_workers)
