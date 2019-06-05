@@ -19,7 +19,7 @@ class CCATextImage(CCA):
 
     def solve(self):
         T = self.features.getTagFeatures()
-        V = self.features.getVisualFeatures()[:, :2000]
+        V = self.features.getVisualFeatures() #[:, :2000]
         return super().solve([T, V])
 
     def textToImageSearch(self, text, n_images):
@@ -30,13 +30,10 @@ class CCATextImage(CCA):
         return self.features.imgIds[idx], similarities[idx]
 
     def imageToTagSearch(self, image, n_tags):
-        phi_v = self.features.imageToVec(image)[:2000]
+        phi_v = self.features.imageToVec(image) #[:2000]
         print(phi_v)
         similarities, idx = self.getSimilarities(phi_v, 1, 0)
         ids = self.features.imgIds[idx[:50]]
-        # from showImages import show
-        # for id in ids:
-        #     show(id)
         return self.features.mostCommonWordsIn(ids, n_tags)
 
 
